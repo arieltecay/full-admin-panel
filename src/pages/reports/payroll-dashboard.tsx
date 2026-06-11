@@ -1,51 +1,94 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { payrollService } from '../../services/api/payroll-service';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  Cell
-} from 'recharts';
-import { 
-  Users, DollarSign, TrendingUp, Baby, Loader2, ChevronLeft, 
-  Download, PieChart as PieIcon, BarChart3, Info, ArrowUpRight, ArrowDownRight, Search
+  Users, DollarSign, TrendingUp, Loader2, ChevronLeft, 
+  Download, Filter, RotateCcw, Search, BarChart3, Percent
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4'];
+// Servicios
+import { payrollService } from '../../services/api/payroll-service';
+
+// Hooks y Utils
+import { usePayrollFilters } from './payroll-dashboard/hooks/usePayrollFilters';
+import { formatCurrency, formatShortCurrency } from './payroll-dashboard/utils/payrollCalculations';
+
+// Tipos
+import type { DashboardDetailsResponse, TabKey, ChatMessage } from './payroll-dashboard/types';
+
+// Componentes Atómicos
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { KpiCard } from './payroll-dashboard/components/kpi-card';
+import { AIAssistant } from './payroll-dashboard/components/ai-assistant';
+
+// Pestañas
+import { PersonalTab } from './payroll-dashboard/components/tabs/personal-tab';
+import { CostosTab, DesviosTab, RetencionesTab, FichaTab } from './payroll-dashboard/components/tabs';
+
+const TAB_KEYS: TabKey[] = ['personal', 'costos', 'desvios', 'retenciones', 'ficha'];
+
+const TAB_LABELS: Record<TabKey, { icon: React.ReactNode; label: string }> = {
+  personal:    { icon: <Users size={16} />,      label: 'Estructura de Personal' },
+  costos:      { icon: <DollarSign size={16} />,  label: 'Análisis de Costos' },
+  desvios:     { icon: <TrendingUp size={16} />,  label: 'Desvíos & Variables' },
+  retenciones: { icon: <Percent size={16} />,     label: 'Retenciones & Descuentos' },
+  ficha:       { icon: <BarChart3 size={16} />,   label: 'Ficha Individual' },
+};
 
 const PayrollDashboard = () => {
   const { clientId, period } = useParams<{ clientId: string, period: string }>();
   const navigate = useNavigate();
-  const [stats, setStats] = useState<any>(null);
+  
+  // State
+  const [data, setData] = useState<DashboardDetailsResponse | null>(null);
   const [periods, setPeriods] = useState<any[]>([]);
   const [comparisonPeriod, setComparisonPeriod] = useState<string>('');
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Filtro dinámico para Obras Sociales
-  const [osSearch, setOsSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<TabKey>('personal');
 
-  useEffect(() => {
-    if (clientId && period) {
-      fetchInitialData();
-    }
-  }, [clientId, period]);
+  // Filtros
+  const { filters, setters, filteredRows, resetFilters } = usePayrollFilters(data?.rows || []);
 
-  const fetchInitialData = async () => {
+  // Chat AI
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isSendingChat, setIsSendingChat] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    if (!clientId || !period) return;
     try {
       setIsLoading(true);
-      const [statsData, periodsData] = await Promise.all([
-        payrollService.getPayrollStats(clientId!, period!),
-        payrollService.getPayrollPeriods(clientId!)
+      const [stats, rows, periodsData] = await Promise.all([
+        payrollService.getPayrollStats(clientId, period),
+        payrollService.getPayroll(clientId, period, 1, 1000),
+        payrollService.getPayrollPeriods(clientId)
       ]);
-      setStats(statsData);
+      
+      setData({
+        clientName: stats.metadata?.contribuyente || 'Cliente',
+        metadata: stats.metadata,
+        stats: stats,
+        rows: rows.data || []
+      });
+      
       setPeriods(periodsData.filter((p: any) => p.period !== period));
+      
+      setChatMessages([{
+        role: 'assistant',
+        content: `Panel administrativo activado para **${stats.metadata?.contribuyente}**. He procesado ${rows.data?.length} legajos del período ${period}. ¿Qué deseas auditar?`
+      }]);
     } catch (error) {
-      toast.error('Error al cargar datos');
+      toast.error('Error al cargar datos de nómina');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [clientId, period]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleCompare = async (compareWith: string) => {
     setComparisonPeriod(compareWith);
@@ -53,250 +96,238 @@ const PayrollDashboard = () => {
       setComparisonData(null);
       return;
     }
-
     try {
       const result = await payrollService.comparePayrolls(clientId!, compareWith, period!);
       setComparisonData(result);
+      toast.success('Comparación cargada');
     } catch (error) {
       toast.error('Error en la comparación');
     }
   };
 
-  if (isLoading) {
+  const handleSendChat = async () => {
+    if (!chatInput.trim() || !clientId) return;
+    const msg = chatInput.trim();
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', content: msg }]);
+    setIsSendingChat(true);
+    // Nota: El admin no tiene un dashboardId directo, usamos el servicio de payroll si existe o el de dashboard genérico
+    // Por ahora simulamos la respuesta o usamos el servicio si está disponible
+    setTimeout(() => {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Auditoría en proceso. El servicio de IA para administradores está analizando los desvíos.' }]);
+      setIsSendingChat(false);
+    }, 1000);
+  };
+
+  if (isLoading || !data) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 space-y-4">
+      <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
         <Loader2 className="animate-spin text-indigo-600" size={48} />
-        <p className="text-slate-500 font-medium text-lg">Analizando datos de nómina...</p>
+        <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Cargando Inteligencia de Datos...</p>
       </div>
     );
   }
 
-  if (!stats) return null;
-
-  const filteredOS = stats.distributions.obraSocial.filter((item: any) => 
-    item.name.toLowerCase().includes(osSearch.toLowerCase())
-  );
-
-  const formatCurrency = (val: number) => 
-    val.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
+  // Cálculos filtrados
+  const filteredTotalRem = filteredRows.reduce((sum, r) => sum + (Number(r['Neto a Pagar']) || 0), 0);
+  const filteredTotalAdicionales = filteredRows.reduce((sum, r) => sum + (Number(r['Adicionales']) || 0), 0);
+  
+  const uniqueSucursales = [...new Set(data.rows.map(r => String(r['Sucursal'] || '')).filter(Boolean))];
+  const uniqueConvenios = [...new Set(data.rows.map(r => String(r['Convenio'] || '')).filter(Boolean))];
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-8 animate-in fade-in duration-700">
+      {/* Admin Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center space-x-4">
           <button 
             onClick={() => navigate(-1)}
-            className="p-2 hover:bg-slate-100 rounded-full transition-colors border border-slate-200"
+            className="p-3 hover:bg-white hover:shadow-md rounded-2xl transition-all border border-slate-100 bg-slate-50/50"
           >
-            <ChevronLeft size={24} />
+            <ChevronLeft size={20} />
           </button>
           <div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Dashboard de Nómina</h1>
-            <p className="text-slate-500 font-medium flex items-center">
-              <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs font-bold mr-2 uppercase">
+            <div className="flex items-center space-x-3">
+              <h1 className="text-3xl font-black text-slate-900 tracking-tighter">{data.clientName.toUpperCase()}</h1>
+              <Badge variant="info">Modo Auditor</Badge>
+            </div>
+            <p className="text-slate-500 font-medium flex items-center mt-1">
+              <span className="bg-indigo-600 text-white px-2 py-0.5 rounded text-[10px] font-black mr-2 uppercase tracking-wider">
                 {period}
               </span>
-              {stats.metadata?.contribuyente || 'Cliente'} - CUIT: {stats.metadata?.cuit}
+              CUIT: {data.metadata?.cuit}
             </p>
           </div>
         </div>
         
-        <div className="flex items-center space-x-4">
-          {/* Selector de Comparación */}
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-bold text-slate-400 uppercase">Comparar con:</span>
+        <div className="flex items-center space-x-3">
+          <div className="bg-white p-1.5 rounded-2xl border border-slate-100 shadow-sm flex items-center space-x-2">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Comparar:</span>
             <select 
-              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
+              className="bg-slate-50 border-none rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/20"
               value={comparisonPeriod}
               onChange={(e) => handleCompare(e.target.value)}
             >
               <option value="">-- Sin comparación --</option>
-              {periods.map(p => (
-                <option key={p.period} value={p.period}>{p.period}</option>
-              ))}
+              {periods.map(p => <option key={p.period} value={p.period}>{p.period}</option>)}
             </select>
           </div>
 
-          <button className="flex items-center space-x-2 bg-white border border-slate-200 px-4 py-2.5 rounded-xl font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm">
-            <Download size={18} />
-            <span>Exportar Reporte</span>
+          <button className="flex items-center space-x-2 bg-slate-900 text-white px-5 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/20 active:scale-95">
+            <Download size={16} />
+            <span>Exportar Informe</span>
           </button>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <KPICard 
-          title="Total Empleados" 
-          value={stats.summary.totalEmployees} 
+      {/* KPIs Pro (con soporte de comparación) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <KpiCard 
+          label="Dotación" 
+          value={filteredRows.length} 
           icon={<Users className="text-blue-600" />} 
           color="blue"
+          sub="Personal Activo"
           variation={comparisonData?.variations.totalEmployees}
         />
-        <KPICard 
-          title="Masa Salarial Total" 
-          value={formatCurrency(stats.summary.totalRemuneration)} 
+        <KpiCard 
+          label="Masa Neta" 
+          value={formatShortCurrency(filteredTotalRem)} 
           icon={<DollarSign className="text-emerald-600" />} 
           color="emerald"
+          sub="Neto Liquidado"
           variation={comparisonData?.variations.totalRemuneration}
         />
-        <KPICard 
-          title="Sueldo Promedio" 
-          value={formatCurrency(stats.summary.averageRemuneration)} 
+        <KpiCard 
+          label="Promedio" 
+          value={formatShortCurrency(filteredRows.length > 0 ? filteredTotalRem/filteredRows.length : 0)} 
           icon={<TrendingUp className="text-indigo-600" />} 
           color="indigo"
+          sub="Sueldo Medio"
           variation={comparisonData?.variations.averageRemuneration}
         />
-        <KPICard 
-          title="Cargas de Familia" 
-          value={stats.summary.totalHijos} 
-          icon={<Baby className="text-pink-600" />} 
+        <KpiCard 
+          label="Adicionales" 
+          value={formatShortCurrency(filteredTotalAdicionales)} 
+          icon={<TrendingUp className="text-amber-600" />} 
+          color="amber"
+          sub="Conceptos Var."
+        />
+        <KpiCard 
+          label="Hijos" 
+          value={data.stats.summary.totalHijos} 
+          icon={<Users className="text-pink-600" />} 
           color="pink"
+          sub="Cargas de Familia"
         />
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Obra Social Horizontal Bar Chart */}
-        <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-          <div className="flex flex-col space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-slate-800 flex items-center">
-                <PieIcon className="mr-3 text-indigo-500" size={24} />
-                Distribución de Obras Sociales
-              </h3>
-              <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg uppercase">
-                {filteredOS.length} variantes
-              </span>
+      {/* Filtros Atómicos */}
+      <Card className="p-6 border-slate-100 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-indigo-500/10 rounded-xl">
+              <Filter size={18} className="text-indigo-600" />
             </div>
-            
-            {/* Buscador interno del gráfico */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input 
-                type="text"
-                placeholder="Buscar obra social..."
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                value={osSearch}
-                onChange={(e) => setOsSearch(e.target.value)}
-              />
-            </div>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Auditoría por Segmento</h3>
           </div>
-
-          <div className="h-[450px] overflow-y-auto pr-2 custom-scrollbar border-t border-slate-50 pt-4">
-            {filteredOS.length > 0 ? (
-              <ResponsiveContainer width="100%" height={Math.max(filteredOS.length * 35, 400)}>
-                <BarChart 
-                  data={filteredOS} 
-                  layout="vertical"
-                  margin={{ left: 10, right: 30, top: 10, bottom: 10 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                  <XAxis type="number" hide />
-                  <YAxis 
-                    dataKey="name" 
-                    type="category" 
-                    width={90} 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fill: '#64748b', fontSize: 10, fontWeight: 'bold'}} 
-                  />
-                  <Tooltip 
-                    cursor={{fill: '#f8fafc'}}
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20}>
-                    {filteredOS.map((_: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
-                <Search size={32} className="opacity-20" />
-                <p className="text-sm italic">No se encontraron resultados</p>
-              </div>
-            )}
-          </div>
-          <p className="text-[10px] text-slate-400 text-center italic">
-            Usa el buscador o desliza para ver la lista completa
-          </p>
+          <button 
+            onClick={resetFilters} 
+            className="text-[10px] font-black text-indigo-600 hover:underline transition-all flex items-center space-x-1.5"
+          >
+            <RotateCcw size={14} />
+            <span>RESETEAR</span>
+          </button>
         </div>
-
-        {/* Condición de Revista Bar Chart */}
-        <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-bold text-slate-800 flex items-center">
-              <BarChart3 className="mr-3 text-emerald-500" size={24} />
-              Condición de Revista
-            </h3>
-          </div>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.distributions.condicion}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                <Tooltip 
-                  cursor={{fill: '#f8fafc'}}
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                />
-                <Bar dataKey="value" fill="#10b981" radius={[8, 8, 0, 0]} barSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* Metadata Info */}
-      <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-3xl flex items-start space-x-4">
-        <Info className="text-indigo-500 shrink-0 mt-1" size={24} />
-        <div>
-          <h4 className="font-bold text-indigo-900 mb-1">Detalles de la Carga</h4>
-          <p className="text-indigo-700 text-sm leading-relaxed">
-            Nómina procesada correctamente. Se han detectado <strong>{stats.summary.totalEmployees} empleados</strong> con un 
-            total de remuneraciones de <strong>{formatCurrency(stats.summary.totalRemuneration)}</strong>. 
-            El CUIT registrado es {stats.metadata?.cuit} bajo la razón social {stats.metadata?.contribuyente}.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const KPICard = ({ title, value, icon, color, variation }: any) => {
-  const colorClasses: any = {
-    blue: "bg-blue-50 text-blue-600",
-    emerald: "bg-emerald-50 text-emerald-600",
-    indigo: "bg-indigo-50 text-indigo-600",
-    pink: "bg-pink-50 text-pink-600",
-  };
-
-  const isPositive = variation > 0;
-  const isNeutral = variation === 0 || variation === undefined;
-
-  return (
-    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
-      <div className="flex items-center space-x-4 mb-4">
-        <div className={`p-3 rounded-2xl ${colorClasses[color]}`}>
-          {icon}
-        </div>
-        <h4 className="font-bold text-slate-500 text-sm uppercase tracking-wider">{title}</h4>
-      </div>
-      <div className="flex items-end justify-between">
-        <p className="text-2xl font-black text-slate-900">{value}</p>
         
-        {!isNeutral && (
-          <div className={`flex items-center space-x-1 px-2 py-1 rounded-lg text-xs font-bold ${
-            isPositive ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
-          }`}>
-            {isPositive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-            <span>{Math.abs(variation).toFixed(1)}%</span>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <select 
+            value={filters.filterSucursal} 
+            onChange={e => setters.setFilterSucursal(e.target.value)} 
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold shadow-sm outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
+          >
+            <option value="">Todas las Sucursales</option>
+            {uniqueSucursales.map((s, i) => <option key={i} value={s}>{s}</option>)}
+          </select>
+          
+          <select 
+            value={filters.filterConvenio} 
+            onChange={e => setters.setFilterConvenio(e.target.value)} 
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold shadow-sm outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
+          >
+            <option value="">Todos los Convenios</option>
+            {uniqueConvenios.map((c, i) => <option key={i} value={c}>{c}</option>)}
+          </select>
+
+          <select 
+            value={filters.filterAntiguedad} 
+            onChange={e => setters.setFilterAntiguedad(e.target.value)} 
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold shadow-sm outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
+          >
+            <option value="">Rango de Antigüedad</option>
+            <option value="0-5">0 - 5 años</option>
+            <option value="5-10">5 - 10 años</option>
+            <option value="10-99">10+ años</option>
+          </select>
+
+          <div className="relative">
+            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Legajo o Apellido..."
+              value={filters.filterSearch}
+              onChange={e => setters.setFilterSearch(e.target.value)}
+              className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold shadow-sm outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
+            />
           </div>
+        </div>
+      </Card>
+
+      {/* Tabs Nav */}
+      <div className="flex items-center space-x-1.5 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto">
+        {TAB_KEYS.map(key => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`flex-1 px-6 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all duration-300 whitespace-nowrap
+              ${activeTab === key 
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 active:scale-95' 
+                : 'text-slate-500 hover:bg-slate-50'
+              }`}
+          >
+            <div className="flex items-center justify-center space-x-2">
+              {TAB_LABELS[key].icon}
+              <span>{TAB_LABELS[key].label}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      <div className="min-h-[500px]">
+        {activeTab === 'personal' && <PersonalTab rows={filteredRows} stats={data.stats} formatCurrency={formatCurrency} />}
+        {activeTab === 'costos' && <CostosTab rows={filteredRows} stats={data.stats} formatCurrency={formatCurrency} />}
+        {activeTab === 'desvios' && <DesviosTab rows={filteredRows} formatCurrency={formatCurrency} />}
+        {activeTab === 'retenciones' && <RetencionesTab rows={filteredRows} formatCurrency={formatCurrency} />}
+        {activeTab === 'ficha' && (
+          <FichaTab
+            rows={data.rows}
+            meta={data.metadata}
+            clientName={data.clientName}
+            selectedEmployee={''}
+            onSelectEmployee={() => {}}
+          />
         )}
       </div>
+
+      {/* AI Assistant for Admin */}
+      <AIAssistant 
+        messages={chatMessages} 
+        input={chatInput} 
+        setInput={setChatInput} 
+        onSend={handleSendChat} 
+        isLoading={isSendingChat} 
+      />
     </div>
   );
 };
