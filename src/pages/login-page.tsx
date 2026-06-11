@@ -50,6 +50,7 @@ const LoginPage = () => {
               <input
                 type="email"
                 required
+                autoComplete="email"
                 className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-slate-900"
                 placeholder="ejemplo@correo.com"
                 value={email}
@@ -65,6 +66,7 @@ const LoginPage = () => {
               <input
                 type="password"
                 required
+                autoComplete="current-password"
                 className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-slate-900"
                 placeholder="••••••••"
                 value={password}
