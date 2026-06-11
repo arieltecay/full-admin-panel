@@ -127,6 +127,7 @@ const ClientsPage = () => {
                 <input
                   type="text"
                   required
+                  autoComplete="name"
                   className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   placeholder="Juan Pérez"
                   value={formData.name}
@@ -142,6 +143,7 @@ const ClientsPage = () => {
                 <input
                   type="email"
                   required
+                  autoComplete="email"
                   className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   placeholder="cliente@correo.com"
                   value={formData.email}
@@ -157,6 +159,7 @@ const ClientsPage = () => {
                 <input
                   type="password"
                   required
+                  autoComplete="new-password"
                   className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   placeholder="••••••••"
                   value={formData.password}
