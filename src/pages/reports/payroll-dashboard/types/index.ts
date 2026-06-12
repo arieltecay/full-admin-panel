@@ -9,21 +9,21 @@ export interface PayrollMetadata {
 }
 
 export interface PayrollRow {
-  _id?: string;
-  Legajo?: string | number;
-  'Apellido y Nombre'?: string;
-  Sucursal?: string;
-  Convenio?: string;
-  'Antigüedad (Años)'?: number;
-  'Neto a Pagar'?: number;
-  'Remuneración Total'?: number;
-  Adicionales?: number;
-  Deducciones?: number;
-  Hijos?: number;
-  'Obra Social'?: string;
-  Condición?: string;
-  Actividad?: string;
-  Localidad?: string;
+  legajo?: string | number;
+  apellidoNombre?: string;
+  sucursal?: string;
+  convenio?: string;
+  antiguedad?: number;
+  netoAPagar?: number;
+  remuneracionTotal?: number;
+  adicionales?: number;
+  deducciones?: number;
+  deducciones_os?: number;
+  hijos?: number;
+  obraSocial?: string;
+  condicion?: string;
+  actividad?: string;
+  localidad?: string;
   [key: string]: PayrollValue;
 }
 
@@ -38,7 +38,11 @@ export interface PayrollStats {
     totalRemuneration: number;
     averageRemuneration: number;
     totalAdicionales: number;
+    totalDeducciones: number;
     totalHijos: number;
+    masaSalarial: number;
+    promedioNeto: number;
+    totalNeto: number;
     [key: string]: number;
   };
   distributions: {
@@ -46,9 +50,27 @@ export interface PayrollStats {
     condicion: DistributionItem[];
     actividad: DistributionItem[];
     localidad: DistributionItem[];
-    [key: string]: DistributionItem[];
+    sucursal?: DistributionItem[];
+    convenio?: DistributionItem[];
+    [key: string]: DistributionItem[] | undefined;
   };
 }
+
+export interface DashboardItem {
+  _id: string;
+  title: string;
+  clientId: string;
+  period: string;
+  isActive: boolean;
+  theme?: {
+    primaryColor?: string;
+    secondaryColor?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TabKey = 'personal' | 'costos' | 'desvios' | 'retenciones' | 'ficha';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -56,11 +78,10 @@ export interface ChatMessage {
 }
 
 export interface DashboardDetailsResponse {
+  dashboard?: DashboardItem;
   clientName: string;
   metadata: PayrollMetadata;
   stats: PayrollStats;
   rows: PayrollRow[];
   periods?: Array<{ period: string }>;
 }
-
-export type TabKey = 'personal' | 'costos' | 'desvios' | 'retenciones' | 'ficha';

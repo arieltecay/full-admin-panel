@@ -45,5 +45,15 @@ export const dashboardService = {
 
   deleteDashboard: async (id: string): Promise<void> => {
     await apiClient.delete(`/dashboards/${id}`);
+  },
+
+  getDashboardDetails: async (id: string): Promise<any> => {
+    const response = await apiClient.get(`/dashboards/${id}/details`);
+    return response.data;
+  },
+
+  queryDashboardAI: async (id: string, query: string): Promise<{ query: string; response: string }> => {
+    const response = await apiClient.post<{ query: string; response: string }>(`/dashboards/${id}/query`, { query });
+    return response.data;
   }
 };

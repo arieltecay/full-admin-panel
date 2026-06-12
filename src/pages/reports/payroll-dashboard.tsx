@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   Users, DollarSign, TrendingUp, Loader2, ChevronLeft, 
-  Download, Filter, RotateCcw, Search, BarChart3, Percent
+  Download, Filter, RotateCcw, Search, BarChart3, Percent, LayoutDashboard
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Servicios
 import { payrollService } from '../../services/api/payroll-service';
+import { dashboardService } from '../../services/api/dashboard-service';
 
 // Hooks y Utils
 import { usePayrollFilters } from './payroll-dashboard/hooks/usePayrollFilters';
@@ -47,9 +48,17 @@ const PayrollDashboard = () => {
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('personal');
+  const [selectedEmployee, setSelectedEmployee] = useState<string>('');
 
-  // Filtros
-  const { filters, setters, filteredRows, resetFilters } = usePayrollFilters(data?.rows || []);
+  // Dashboard Context para IA
+  const [dashboardId, setDashboardId] = useState<string | null>(null);
+  const [isAiOpen, setIsAiOpen] = useState(true);
+
+  // Filtros (v2 Server-Driven)
+  const { 
+    filters, setters, filteredRows, filteredStats, 
+    isLoadingStats, resetFilters 
+  } = usePayrollFilters(data?.rows || [], clientId, period, data?.stats);
 
   // Chat AI
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -60,24 +69,34 @@ const PayrollDashboard = () => {
     if (!clientId || !period) return;
     try {
       setIsLoading(true);
-      const [stats, rows, periodsData] = await Promise.all([
+      const [stats, payrollResponse, periodsData, dashboards] = await Promise.all([
         payrollService.getPayrollStats(clientId, period),
         payrollService.getPayroll(clientId, period, 1, 1000),
-        payrollService.getPayrollPeriods(clientId)
+        payrollService.getPayrollPeriods(clientId),
+        dashboardService.getDashboards()
       ]);
       
       setData({
         clientName: stats.metadata?.contribuyente || 'Cliente',
         metadata: stats.metadata,
         stats: stats,
-        rows: rows.data || []
+        rows: payrollResponse.rows || []
       });
       
+      // Intentar encontrar el dashboardId para habilitar IA real
+      const currentDashboard = dashboards.find(d => 
+        (typeof d.clientId === 'object' ? d.clientId._id === clientId : d.clientId === clientId) && 
+        d.period === period
+      );
+      if (currentDashboard) {
+        setDashboardId(currentDashboard._id);
+      }
+
       setPeriods(periodsData.filter((p: any) => p.period !== period));
       
       setChatMessages([{
         role: 'assistant',
-        content: `Panel administrativo activado para **${stats.metadata?.contribuyente}**. He procesado ${rows.data?.length} legajos del período ${period}. ¿Qué deseas auditar?`
+        content: `Panel administrativo activado para **${stats.metadata?.contribuyente}**. He procesado ${payrollResponse.rows?.length || 0} legajos del período ${period}. ¿Qué deseas auditar?`
       }]);
     } catch (error) {
       toast.error('Error al cargar datos de nómina');
@@ -107,16 +126,29 @@ const PayrollDashboard = () => {
 
   const handleSendChat = async () => {
     if (!chatInput.trim() || !clientId) return;
+    
     const msg = chatInput.trim();
     setChatInput('');
     setChatMessages(prev => [...prev, { role: 'user', content: msg }]);
     setIsSendingChat(true);
-    // Nota: El admin no tiene un dashboardId directo, usamos el servicio de payroll si existe o el de dashboard genérico
-    // Por ahora simulamos la respuesta o usamos el servicio si está disponible
-    setTimeout(() => {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Auditoría en proceso. El servicio de IA para administradores está analizando los desvíos.' }]);
+
+    try {
+      if (dashboardId) {
+        // Uso de IA Real si el dashboard existe
+        const result = await dashboardService.queryDashboardAI(dashboardId, msg);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: result.response }]);
+      } else {
+        // Fallback descriptivo si no hay dashboard creado
+        setChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: '⚠️ No se ha creado un "Tablero" (Gestión BI) para este cliente y período. Para usar el análisis de IA avanzado, primero crea el tablero en la sección de Gestión BI.' 
+        }]);
+      }
+    } catch (error) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Error al conectar con el servicio de IA.' }]);
+    } finally {
       setIsSendingChat(false);
-    }, 1000);
+    }
   };
 
   if (isLoading || !data) {
@@ -128,12 +160,12 @@ const PayrollDashboard = () => {
     );
   }
 
-  // Cálculos filtrados
-  const filteredTotalRem = filteredRows.reduce((sum, r) => sum + (Number(r['Neto a Pagar']) || 0), 0);
-  const filteredTotalAdicionales = filteredRows.reduce((sum, r) => sum + (Number(r['Adicionales']) || 0), 0);
+  // Cálculos dinámicos desde stats filtrados (v2)
+  const stats = filteredStats || data.stats;
+  const currentSummary = stats.summary;
   
-  const uniqueSucursales = [...new Set(data.rows.map(r => String(r['Sucursal'] || '')).filter(Boolean))];
-  const uniqueConvenios = [...new Set(data.rows.map(r => String(r['Convenio'] || '')).filter(Boolean))];
+  const uniqueSucursales = [...new Set(data.rows.map(r => String(r.sucursal || '')).filter(Boolean))];
+  const uniqueConvenios = [...new Set(data.rows.map(r => String(r.convenio || '')).filter(Boolean))];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -180,46 +212,77 @@ const PayrollDashboard = () => {
         </div>
       </div>
 
-      {/* KPIs Pro (con soporte de comparación) */}
+      {/* Banner de Sincronización con Gestión BI */}
+      {dashboardId && (
+        <div className="bg-indigo-600 rounded-3xl p-6 text-white flex items-center justify-between shadow-xl shadow-indigo-600/20 animate-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center space-x-4">
+            <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md">
+              <LayoutDashboard size={24} />
+            </div>
+            <div>
+              <p className="font-black text-lg tracking-tight">¡Tablero configurado detectado!</p>
+              <p className="text-indigo-100 text-sm font-medium">Puedes visualizar exactamente lo que el cliente verá (colores, temas y personalización).</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => navigate(`/dashboard-preview/${dashboardId}`)}
+            className="px-6 py-3 bg-white text-indigo-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg active:scale-95"
+          >
+            Ver como Cliente
+          </button>
+        </div>
+      )}
+
+      {/* KPIs Pro (con soporte de comparación y loading) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-        <KpiCard 
-          label="Dotación" 
-          value={filteredRows.length} 
-          icon={<Users className="text-blue-600" />} 
-          color="blue"
-          sub="Personal Activo"
-          variation={comparisonData?.variations.totalEmployees}
-        />
-        <KpiCard 
-          label="Masa Neta" 
-          value={formatShortCurrency(filteredTotalRem)} 
-          icon={<DollarSign className="text-emerald-600" />} 
-          color="emerald"
-          sub="Neto Liquidado"
-          variation={comparisonData?.variations.totalRemuneration}
-        />
-        <KpiCard 
-          label="Promedio" 
-          value={formatShortCurrency(filteredRows.length > 0 ? filteredTotalRem/filteredRows.length : 0)} 
-          icon={<TrendingUp className="text-indigo-600" />} 
-          color="indigo"
-          sub="Sueldo Medio"
-          variation={comparisonData?.variations.averageRemuneration}
-        />
-        <KpiCard 
-          label="Adicionales" 
-          value={formatShortCurrency(filteredTotalAdicionales)} 
-          icon={<TrendingUp className="text-amber-600" />} 
-          color="amber"
-          sub="Conceptos Var."
-        />
-        <KpiCard 
-          label="Hijos" 
-          value={data.stats.summary.totalHijos} 
-          icon={<Users className="text-pink-600" />} 
-          color="pink"
-          sub="Cargas de Familia"
-        />
+        {isLoadingStats ? (
+          // Skeleton placeholders mientras carga la API
+          Array(5).fill(0).map((_, i) => (
+            <div key={i} className="h-32 bg-slate-100 dark:bg-slate-800 animate-pulse rounded-[2rem]" />
+          ))
+        ) : (
+          <>
+            <KpiCard 
+              label="Dotación" 
+              value={currentSummary.totalEmployees} 
+              icon={<Users className="text-blue-600" />} 
+              color="blue"
+              sub="Personal Activo"
+              variation={comparisonData?.variations.totalEmployees}
+            />
+            <KpiCard 
+              label="Masa Neta" 
+              value={formatShortCurrency(currentSummary.totalNeto || currentSummary.masaSalarial)} 
+              icon={<DollarSign className="text-emerald-600" />} 
+              color="emerald"
+              sub="Neto Liquidado"
+              variation={comparisonData?.variations.totalRemuneration}
+            />
+            <KpiCard 
+              label="Promedio" 
+              value={formatShortCurrency(currentSummary.promedioNeto || currentSummary.averageRemuneration)} 
+              icon={<TrendingUp className="text-indigo-600" />} 
+              color="indigo"
+              sub="Sueldo Medio"
+              variation={comparisonData?.variations.averageRemuneration}
+            />
+            <KpiCard 
+              label="Adicionales" 
+              value={formatShortCurrency(currentSummary.totalAdicionales)} 
+              icon={<TrendingUp className="text-amber-600" />} 
+              color="amber"
+              sub="Conceptos Var."
+            />
+            <KpiCard 
+              label="Retenciones" 
+              value={formatShortCurrency(Math.abs(currentSummary.totalDeducciones))} 
+              icon={<Percent className="text-rose-600" />} 
+              color="rose"
+              sub="Aportes Ley"
+              negative
+            />
+          </>
+        )}
       </div>
 
       {/* Filtros Atómicos */}
@@ -305,17 +368,17 @@ const PayrollDashboard = () => {
 
       {/* Tab Content */}
       <div className="min-h-[500px]">
-        {activeTab === 'personal' && <PersonalTab rows={filteredRows} stats={data.stats} formatCurrency={formatCurrency} />}
-        {activeTab === 'costos' && <CostosTab rows={filteredRows} stats={data.stats} formatCurrency={formatCurrency} />}
-        {activeTab === 'desvios' && <DesviosTab rows={filteredRows} formatCurrency={formatCurrency} />}
-        {activeTab === 'retenciones' && <RetencionesTab rows={filteredRows} formatCurrency={formatCurrency} />}
+        {activeTab === 'personal' && <PersonalTab rows={filteredRows} stats={stats} formatCurrency={formatCurrency} />}
+        {activeTab === 'costos' && <CostosTab rows={filteredRows} stats={stats} formatCurrency={formatCurrency} />}
+        {activeTab === 'desvios' && <DesviosTab rows={filteredRows} stats={stats} formatCurrency={formatCurrency} />}
+        {activeTab === 'retenciones' && <RetencionesTab rows={filteredRows} stats={stats} formatCurrency={formatCurrency} />}
         {activeTab === 'ficha' && (
           <FichaTab
             rows={data.rows}
             meta={data.metadata}
             clientName={data.clientName}
-            selectedEmployee={''}
-            onSelectEmployee={() => {}}
+            selectedEmployee={selectedEmployee}
+            onSelectEmployee={setSelectedEmployee}
           />
         )}
       </div>
@@ -327,6 +390,8 @@ const PayrollDashboard = () => {
         setInput={setChatInput} 
         onSend={handleSendChat} 
         isLoading={isSendingChat} 
+        isOpen={isAiOpen}
+        onToggle={() => setIsAiOpen(!isAiOpen)}
       />
     </div>
   );

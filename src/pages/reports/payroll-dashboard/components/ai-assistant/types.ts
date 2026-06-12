@@ -9,4 +9,6 @@ export interface AIAssistantProps {
   setInput: (val: string) => void;
   onSend: () => void;
   isLoading: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
 }

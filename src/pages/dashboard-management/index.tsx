@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { dashboardService, DashboardItem } from '../../services/api/dashboard-service';
 import { clientService, Client } from '../../services/client-service';
 import { payrollService } from '../../services/api/payroll-service';
 import { 
   LayoutDashboard, Plus, Trash2, Edit3, CheckCircle2, 
   XCircle, Filter, Calendar, User, Palette, 
-  Loader2, MoreVertical, AlertTriangle
+  Loader2, MoreVertical, AlertTriangle, Eye
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Modal } from '../../components/ui/Modal';
 
 const DashboardManagement = () => {
+  const navigate = useNavigate();
   const [dashboards, setDashboards] = useState<DashboardItem[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -237,6 +239,13 @@ const DashboardManagement = () => {
                   </td>
                   <td className="px-8 py-5 text-right">
                     <div className="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button 
+                        onClick={() => navigate(`/dashboard-preview/${dash._id}`)}
+                        className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors"
+                        title="Ver como Cliente"
+                      >
+                        <Eye size={18} />
+                      </button>
                       <button 
                         onClick={() => handleEdit(dash)}
                         className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors"

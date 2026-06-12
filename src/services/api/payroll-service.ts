@@ -35,10 +35,10 @@ export const payrollService = {
   },
 
   /**
-   * Obtiene estadísticas de un payroll.
+   * Obtiene estadísticas de un payroll (Soporta filtros v2).
    */
-  getPayrollStats: async (clientId: string, period: string) => {
-    const response = await apiClient.get(`/payroll/${clientId}/${period}/stats`);
+  getPayrollStats: async (clientId: string, period: string, filters: any = {}) => {
+    const response = await apiClient.post(`/payroll/${clientId}/${period}/stats`, { filters });
     return response.data;
   },
 

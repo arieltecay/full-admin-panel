@@ -1,22 +1,41 @@
 import React from 'react';
-import { Bot, Send, Loader2 } from 'lucide-react';
+import { Bot, Send, Loader2, X, MessageSquare } from 'lucide-react';
 import { Card } from '../../../../../components/ui/Card';
 import type { AIAssistantProps, ChatMessage } from './types';
 
 /**
- * Asistente AI para el administrador con tipado estricto.
+ * Asistente AI para el administrador con tipado estricto y control de visibilidad.
  */
 export const AIAssistant: React.FC<AIAssistantProps> = ({ 
-  messages, input, setInput, onSend, isLoading 
+  messages, input, setInput, onSend, isLoading, isOpen, onToggle 
 }) => {
+  if (!isOpen) {
+    return (
+      <button 
+        onClick={onToggle}
+        className="fixed bottom-6 right-6 z-50 p-4 bg-indigo-600 text-white rounded-full shadow-2xl hover:bg-indigo-700 transition-all active:scale-95 group"
+      >
+        <MessageSquare size={24} className="group-hover:scale-110 transition-transform" />
+      </button>
+    );
+  }
+
   return (
-    <div className="fixed bottom-6 right-6 z-40 w-80">
-      <Card className="shadow-2xl border-slate-200">
-        <div className="p-4 border-b border-slate-100 flex items-center space-x-2">
-          <div className="p-1.5 bg-indigo-500/10 rounded-lg">
-            <Bot size={18} className="text-indigo-500" />
+    <div className="fixed bottom-6 right-6 z-40 w-80 animate-in slide-in-from-bottom-4 duration-300">
+      <Card className="shadow-2xl border-slate-200 overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">
+          <div className="flex items-center space-x-2">
+            <div className="p-1.5 bg-indigo-500/10 rounded-lg">
+              <Bot size={18} className="text-indigo-500" />
+            </div>
+            <span className="font-bold text-slate-800 text-sm">Auditor AI (Admin)</span>
           </div>
-          <span className="font-bold text-slate-800 text-sm">Auditor AI (Admin)</span>
+          <button 
+            onClick={onToggle}
+            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"
+          >
+            <X size={18} />
+          </button>
         </div>
         
         <div className="h-64 overflow-y-auto p-4 space-y-3 bg-slate-50/30">
@@ -40,7 +59,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
           )}
         </div>
         
-        <div className="p-3 border-t border-slate-100 flex items-center space-x-2">
+        <div className="p-3 border-t border-slate-100 flex items-center space-x-2 bg-white">
           <input
             className="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
             placeholder="Analizar datos..."

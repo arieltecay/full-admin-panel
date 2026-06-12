@@ -6,13 +6,17 @@ import ClientsPage from '../pages/clients';
 import DashboardManagement from '../pages/dashboard-management';
 import PayrollUpload from '../pages/reports/payroll-upload';
 import PayrollDashboard from '../pages/reports/payroll-dashboard';
+import DashboardPreview from '../pages/dashboard-preview';
 import AdminDashboard from '../pages/dashboard/main-dashboard';
 import ProtectedRoute from '../components/layout/protected-route';
 import { AuthProvider } from '../hooks/use-auth';
+import { SidebarProvider } from '../context/sidebar-context';
 
 const AppLayout = () => (
   <AuthProvider>
-    <Outlet />
+    <SidebarProvider>
+      <Outlet />
+    </SidebarProvider>
   </AuthProvider>
 );
 
@@ -55,6 +59,10 @@ export const router = createBrowserRouter([
           {
             path: 'reports/payroll/:clientId/:period',
             element: <PayrollDashboard />,
+          },
+          {
+            path: 'dashboard-preview/:dashboardId',
+            element: <DashboardPreview />,
           },
           {
             path: 'settings',
