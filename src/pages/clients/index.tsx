@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { clientService, Client } from '../../services/client-service';
+import { clientService } from '../../services/client-service';
+import { Client } from './types';
 import { 
   UserPlus, Mail, User, ShieldCheck, Loader2, Search, 
   Calendar, Clock, ToggleLeft, ToggleRight, MessageSquare,
-  Send
+  Send, Eye, EyeOff, KeyRound
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Modal } from '../../components/ui/Modal';
@@ -19,6 +20,18 @@ const ClientsPage = () => {
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [selectedClientForNote, setSelectedClientForNote] = useState<Client | null>(null);
   const [customNote, setCustomNote] = useState('');
+
+  // Extend modal state
+  const [isExtendModalOpen, setIsExtendModalOpen] = useState(false);
+  const [selectedClientForExtend, setSelectedClientForExtend] = useState<Client | null>(null);
+  const [extendDays, setExtendDays] = useState<number | ''>(1);
+
+  // Password modal state
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [selectedClientForPassword, setSelectedClientForPassword] = useState<Client | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isEditingPassword, setIsEditingPassword] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
@@ -42,7 +55,7 @@ const ClientsPage = () => {
     e.preventDefault();
     setIsRegistering(true);
     try {
-      await clientService.registerClient(formData);
+      await clientService.registerClient({ ...formData, managerPassword: formData.password });
       toast.success('Cliente registrado exitosamente');
       setFormData({ name: '', email: '', password: '' });
       fetchClients();
@@ -66,7 +79,7 @@ const ClientsPage = () => {
     }
   };
 
-  const handleExtendAccess = async (clientId: string, days: number) => {
+  const extendAccessByDays = async (clientId: string, days: number) => {
     setUpdatingId(clientId);
     const expirationDate = new Date();
     expirationDate.setDate(expirationDate.getDate() + days);
@@ -85,6 +98,24 @@ const ClientsPage = () => {
     }
   };
 
+  const openExtendModal = (client: Client) => {
+    setSelectedClientForExtend(client);
+    setExtendDays(1);
+    setIsExtendModalOpen(true);
+  };
+
+  const closeExtendModal = () => {
+    setIsExtendModalOpen(false);
+    setSelectedClientForExtend(null);
+    setExtendDays(1);
+  };
+
+  const handleExtendFromModal = async () => {
+    if (!selectedClientForExtend || !extendDays) return;
+    await extendAccessByDays(selectedClientForExtend._id, Number(extendDays));
+    closeExtendModal();
+  };
+
   const handleSaveNote = async () => {
     if (!selectedClientForNote) return;
     try {
@@ -94,6 +125,53 @@ const ClientsPage = () => {
       fetchClients();
     } catch (error) {
       toast.error('Error al guardar la nota');
+    }
+  };
+
+  const openPasswordModal = (client: Client) => {
+    setSelectedClientForPassword(client);
+    setNewPassword(client.managerPassword || '');
+    setIsPasswordVisible(false);
+    setIsEditingPassword(false);
+    setIsPasswordModalOpen(true);
+  };
+
+  const closePasswordModal = () => {
+    setIsPasswordModalOpen(false);
+    setSelectedClientForPassword(null);
+    setNewPassword('');
+    setIsPasswordVisible(false);
+    setIsEditingPassword(false);
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!selectedClientForPassword) return;
+    setUpdatingId(selectedClientForPassword._id);
+    try {
+      await clientService.updateClient(selectedClientForPassword._id, { managerPassword: newPassword });
+      toast.success('Contraseña actualizada');
+      closePasswordModal();
+      fetchClients();
+    } catch (error) {
+      toast.error('Error al actualizar la contraseña');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleDeletePassword = async () => {
+    if (!selectedClientForPassword) return;
+    if (!confirm('¿Eliminar la contraseña interna?')) return;
+    setUpdatingId(selectedClientForPassword._id);
+    try {
+      await clientService.updateClient(selectedClientForPassword._id, { managerPassword: '' });
+      toast.success('Contraseña eliminada');
+      closePasswordModal();
+      fetchClients();
+    } catch (error) {
+      toast.error('Error al eliminar la contraseña');
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -248,24 +326,25 @@ const ClientsPage = () => {
                             {client.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                           </button>
 
-                          {/* Extend Access Menu */}
-                          <div className="relative group">
-                            <button className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-all flex items-center space-x-1">
-                              <Calendar size={18} />
-                              <span className="text-xs font-bold">Extender</span>
-                            </button>
-                            <div className="absolute right-0 bottom-full mb-2 w-40 bg-white border border-slate-200 rounded-xl shadow-xl z-30 hidden group-hover:block overflow-hidden">
-                               {[1, 3, 7, 30].map(days => (
-                                 <button 
-                                   key={days}
-                                   onClick={() => handleExtendAccess(client._id, days)}
-                                   className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition-colors border-b border-slate-50 last:border-0"
-                                 >
-                                   +{days} {days === 1 ? 'día' : 'días'}
-                                 </button>
-                               ))}
-                            </div>
-                          </div>
+                          {/* Extend Button */}
+                          <button
+                            onClick={() => openExtendModal(client)}
+                            className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-all flex items-center space-x-1"
+                            title="Extender acceso"
+                          >
+                            <Calendar size={18} />
+                            <span className="text-xs font-bold">Extender</span>
+                          </button>
+
+                          {/* Password Button */}
+                          <button
+                            onClick={() => openPasswordModal(client)}
+                            className="p-2 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-xl transition-all flex items-center space-x-1"
+                            title="Contraseña interna"
+                          >
+                            <KeyRound size={18} />
+                            <span className="text-xs font-bold">Contraseña</span>
+                          </button>
 
                           {/* Custom Note */}
                           <button 
@@ -318,6 +397,127 @@ const ClientsPage = () => {
             <Send size={18} />
             <span>Guardar Mensaje</span>
           </button>
+        </div>
+      </Modal>
+
+      {/* Extend Modal */}
+      <Modal
+        isOpen={isExtendModalOpen}
+        onClose={closeExtendModal}
+        title={`Extender acceso - ${selectedClientForExtend?.name}`}
+      >
+        <div className="space-y-6">
+          <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
+            <p className="text-sm font-bold text-indigo-700">{selectedClientForExtend?.email}</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+              Días a extender
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={extendDays}
+              onChange={e => setExtendDays(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10)))}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-medium"
+              placeholder="Cantidad de días"
+            />
+          </div>
+
+          <button
+            onClick={handleExtendFromModal}
+            disabled={!extendDays || updatingId === selectedClientForExtend?._id}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-lg shadow-indigo-600/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2 disabled:opacity-50"
+          >
+            {updatingId === selectedClientForExtend?._id ? (
+              <Loader2 className="animate-spin" size={18} />
+            ) : (
+              <>
+                <Calendar size={18} />
+                <span>Extender {extendDays ? `${extendDays} días` : ''}</span>
+              </>
+            )}
+          </button>
+        </div>
+      </Modal>
+
+      {/* Password Modal */}
+      <Modal
+        isOpen={isPasswordModalOpen}
+        onClose={closePasswordModal}
+        title={`Contraseña de ${selectedClientForPassword?.name}`}
+      >
+        <div className="space-y-6">
+          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+            <p className="text-sm font-bold text-amber-700">{selectedClientForPassword?.email}</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+              Contraseña interna
+            </label>
+            <div className="relative">
+              <input
+                type={isPasswordVisible ? 'text' : 'password'}
+                readOnly={!isEditingPassword}
+                value={isEditingPassword ? newPassword : (selectedClientForPassword?.managerPassword || '')}
+                onChange={e => setNewPassword(e.target.value)}
+                className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-amber-500 outline-none transition-all text-sm font-medium"
+                placeholder={isEditingPassword ? 'Nueva contraseña' : 'Sin contraseña'}
+              />
+              <button
+                type="button"
+                onClick={() => setIsPasswordVisible(prev => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {isPasswordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {!isEditingPassword ? (
+              <>
+                <button
+                  onClick={() => setIsEditingPassword(true)}
+                  className="px-4 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold rounded-xl transition-all text-sm"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={handleDeletePassword}
+                  disabled={!selectedClientForPassword?.managerPassword || updatingId === selectedClientForPassword?._id}
+                  className="px-4 py-3 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-xl transition-all text-sm disabled:opacity-50"
+                >
+                  Eliminar
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    setIsEditingPassword(false);
+                    setNewPassword(selectedClientForPassword?.managerPassword || '');
+                  }}
+                  className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-all text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleUpdatePassword}
+                  disabled={updatingId === selectedClientForPassword?._id}
+                  className="px-4 py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl transition-all text-sm disabled:opacity-50"
+                >
+                  {updatingId === selectedClientForPassword?._id ? (
+                    <Loader2 className="animate-spin mx-auto" size={18} />
+                  ) : (
+                    'Guardar'
+                  )}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </Modal>
     </div>

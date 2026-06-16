@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dashboardService, DashboardItem } from '../../services/api/dashboard-service';
-import { clientService, Client } from '../../services/client-service';
+import { clientService } from '../../services/client-service';
+import { Client } from '../clients/types';
 import { payrollService } from '../../services/api/payroll-service';
 import { 
   LayoutDashboard, Plus, Trash2, Edit3, CheckCircle2, 

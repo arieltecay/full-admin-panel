@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { clientService, Client } from '../../services/client-service';
+import { clientService } from '../../services/client-service';
+import { Client } from '../clients/types';
 import { payrollService } from '../../services/api/payroll-service';
 import { 
   Upload, Loader2, FileSpreadsheet, AlertCircle, CheckCircle2, 
